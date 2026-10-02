@@ -1,0 +1,8 @@
+scripts/local.sh
+.env
+*.log
+logs/
+__pycache__/
+*.pyc
+.DS_Store
+bench-results/
