@@ -1,3 +1,77 @@
+apex-flash-1 EXL3 on 2x DGX Spark with TensorFold
+Copyright 2026 Denis (wambosec)
+
+This project's own code, scripts and documentation are licensed under the Apache License, Version 2.0 (see
+LICENSE). If you redistribute this project or a modified version of it, keep this NOTICE file and state what you
+changed (Apache-2.0, section 4).
+
+
+DERIVED FROM
+
+This project is a derivative work of:
+
+  GLM-5.3-Flash EXL3 on 2x DGX Spark with TensorFold
+  https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold
+  Copyright 2026 MiaAI-Lab. Apache License, Version 2.0.
+
+Mia's AI Lab wrote the serving recipe this project is built on: the TensorFold container build, the two-rank
+start/stop flow over the ConnectX-7 link, and all 53 files in patches/. That work is theirs, and it is the reason
+this recipe exists at all. Their NOTICE is reproduced below in full, as Apache-2.0 section 4 requires.
+
+Changes made in this project, relative to the upstream recipe (Apache-2.0, section 4(b)):
+
+  * Serves cantina-security/apex-flash-1 instead of zai-org/GLM-5.3-Flash. The two checkpoints share the
+    glm5_next architecture exactly, so patches/ is carried over unmodified from upstream.
+  * Added quantize/, a new EXL3 conversion pipeline for the apex-flash-1 BF16 release. It streams the 642.7 GB
+    source from Hugging Face shard by shard and evicts consumed shards as the converter advances, so the
+    conversion fits on a single Spark's disk instead of needing roughly 1 TB. This code is new and is this
+    project's own work.
+  * Changed the defaults in scripts/config.sh to leave headroom on each Spark for other GPU work: a 262,144-token
+    context instead of 1,048,576, a larger memory reserve, vision off, and the checkpoint's own MTP head as the
+    default drafter instead of DFlash2. Upstream's settings remain available as profiles/max-context.sh.
+  * Added profiles/, tools/bench.py and the verification steps described in README.md.
+  * Fixed the worker disk check in scripts/prepare.sh to count the part of the checkpoint
+    the worker already holds. The copy is incremental, but the check asked for room for a
+    second full copy, so updating a checkpoint in place was refused on a worker that had
+    nearly all of it.
+
+patches/ is unmodified upstream work. scripts/ and start.sh / stop.sh are upstream files with the changes above.
+
+
+THIRD-PARTY WORK
+
+This project builds on third-party work that keeps its own license:
+
+apex-flash-1
+  https://huggingface.co/cantina-security/apex-flash-1
+  Copyright 2026 cantina-security. MIT License. A reinforcement-learning post-train of GLM-5.3-Flash for security
+  work. The EXL3 checkpoint this recipe serves is a quantization of it and carries the same MIT license.
+
+GLM-5.3-Flash
+  https://huggingface.co/zai-org/GLM-5.3-Flash
+  Copyright 2026 Z.ai. The base model apex-flash-1 was trained from; see its model card for terms.
+
+ExLlamaV3
+  https://github.com/turboderp-org/exllamav3
+  Copyright 2026 turboderp. MIT License. quantize/ drives its convert.py to produce the EXL3 checkpoint.
+
+DFlash2 (optional, off by default)
+  https://huggingface.co/incoai/GLM-5.3-Flash-DFlash2
+  Copyright 2026 IncoAI. Creative Commons Attribution-NonCommercial-NoDerivatives 4.0. NON-COMMERCIAL USE ONLY.
+  This recipe defaults to DRAFTER=mtp, which uses the checkpoint's own MTP head and carries no such restriction.
+  Setting DRAFTER=dflash2 opts into DFlash2 and its licence; do not do that in commercial deployments.
+
+TensorFold
+  https://github.com/ashhart/TensorFold
+  Copyright 2026 TensorFold contributors. Apache License, Version 2.0 from 0.6.0; code written before 0.6.0 keeps
+  its MIT notice. See upstream's NOTICE, reproduced below, for the full terms that apply to patched trees.
+
+
+-------------------------------------------------------------------------------
+UPSTREAM NOTICE, reproduced in full from
+https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks-TensorFold
+-------------------------------------------------------------------------------
+
 GLM-5.3-Flash EXL3 on 2x DGX Spark with TensorFold
 Copyright 2026 MiaAI-Lab
 
@@ -9,8 +83,8 @@ This project builds on third-party work that keeps its own license:
 
 TensorFold
   https://github.com/ashhart/TensorFold
-  Copyright 2026 TensorFold contributors. Apache License, Version 2.0 from 0.6.0; code written before 0.6.0 keeps its
-  MIT notice (below). TensorFold's NOTICE reads: "TensorFold / Copyright 2026 TensorFold contributors /
+  Copyright 2026 TensorFold contributors. Apache License, Version 2.0 from 0.6.0; code written before 0.6.0 keeps
+  its MIT notice (below). TensorFold's NOTICE reads: "TensorFold / Copyright 2026 TensorFold contributors /
   https://github.com/ashhart/TensorFold".
   The files in patches/ modify TensorFold v0.6.0 source; scripts/prepare.sh applies them to TensorFold's installed
   package when it builds the image. The changes in patches/ are this project's work under Apache-2.0 (except the
@@ -37,80 +111,3 @@ TensorFold
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
-
-  patches/0044-cuda-context-errors.patch and patches/0045-cuda-metrics.patch extend code TensorFold v0.6.0 has
-  itself: 0044 gives context-window errors OpenAI's "param" field and the same wording and code
-  (context_length_exceeded) for GLM's own window check and image prompts; 0045 adds the CUDA server's /health
-  figures to /metrics as tensorfold_health:* families. Two comments in 0044 still name the upstream commit (68c6e35)
-  whose wording they reuse.
-
-b12x
-  https://github.com/local-inference-lab/b12x
-  Copyright the b12x contributors (local-inference-lab). Apache License, Version 2.0.
-  patches/0006-cuda-roce-allgather.patch: tensorfold/cuda/roce_proxy.c is b12x's RDMA proxy
-  (b12x/comm/roce/_roce_proxy.c at commit 8a99d639410e39d5f39cb4037675331beceea1d4), used as is except its header;
-  tensorfold/cuda/roce.cu reimplements b12x's CuTe DSL all-gather kernel (b12x/comm/roce/_allgather_cute.py at the
-  same commit) in CUDA C++, with the same stages and memory orderings.
-
-glm53-tensorfold-spark
-  https://github.com/jayleaton/glm53-tensorfold-spark
-  Copyright 2026 Jay Leaton (https://x.com/jayleaton)
-  Apache License, Version 2.0.
-  patches/0036-glm-tool-calls.patch adapts parts of that project's patch 0620:
-    - tensorfold/cuda/reply_text.py: the rule that tool calls written inside the think block are the reply's calls
-      when they end it (its trailing_calls), applied in ThinkSplit.
-    - tensorfold/families/glm5_next/cuda/kept_reasoning.py: its reasoning store (the ReasoningMemory LRU, keyed by the
-      server's call ids and by a signature of the calls). Changed here: the signature covers the whole conversation
-      before the calls, not only the last user message, so a reply is only ever put back into the conversation it
-      was written for.
-    - tensorfold/tool_parameters.py: const schemas, and null read as None for a nullable string (its typed_value),
-      moved into the shared decoder that every parser and both streamers use. Its coercions that change what a
-      resent history renders (quoted scalars, Python literals, integral floats) were not taken. (TensorFold v0.6.0's
-      own decoder reads Python literals for Qwen's parsers; GLM's parsers keep values as written.)
-  The rest of patch 0036 is this project's own implementation.
-  Decode code adapted from that project's patches (Apache-2.0, Copyright 2026 Jay Leaton), in
-  patches/0046-glm-l2-prefetch.patch and patches/0047-glm-exl3-decode-loads.patch:
-    - patches/0046-glm-l2-prefetch.patch: tensorfold/families/glm5_next/cuda/l2pf.cu, l2pf.cpp, l2pf.py
-      (TF_GLM_L2PF): adapted from patch 0460's L2 prefetch (its l2pf.cu / l2pf.py; not its RoCE changes): a
-      side-stream kernel that issues cp.async.bulk.prefetch.L2 (or line prefetches, or loads) for the weights the next
-      kernels read, forked at a layer's attention and FFN all-gathers and after its attention projections and joined
-      before the forward returns; a budget a site; a 4-bit matrix's chunk heads for one-wave launches; the shared
-      expert run before the routed experts while it is on. Changed here: hooks in this project's forward
-      (single-stream and batched multi-stream verify windows, captured and eager); one device table of pre-split
-      (address, bytes) pieces for every site, each site's grid sized at load, one kernel for the three mechanisms;
-      DSA's output site placed after the query absorb, prefetching kv_b's value half (this project's latent layout)
-      before the output projection; the next layer's small KDA / DSA / indexer weights added to the FFN site; no
-      expert or MTP sites; 8 MiB a site by default.
-    - patches/0047-glm-exl3-decode-loads.patch: tensorfold/families/glm5_next/cuda/exl3.cu (dec_kernel's second load
-      path, TF_GLM_EXL3_LOADS=nc), with its setting in exl3.cpp and exl3_mm.py: adapted from patch 0580 (its
-      exl3_ld.cu ld_kernel, LD_NC): 16-byte ld.global.nc.L1::no_allocate loads of the trellis a k step ahead through a
-      staging area in the warp's slice of the reduction buffer, and the item read with its count in one round trip,
-      the first steps' words issued before the member rows reach shared memory. Changed here: built into this
-      project's decode kernel (its expert plan, fused down / gate-up epilogues and per-row input rotation kept), ring
-      depth 1, 2 or 4 as a template parameter, no probe or PDL variants.
-
-Model files (downloaded from Hugging Face by scripts/prepare.sh; not included in this repository or its image)
-  The checkpoint, Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw (a byte-identical mirror of
-  brandonmusic/GLM-5.3-Flash-tr3-4bpw), is under the ShapleyMcg License 1.0, which requires this attribution:
-
-    This work includes or was produced using ShapleyMcg, created by Brandon M. Music
-    (https://github.com/brandonmmusic-max/shapleymcg). ShapleyMcg is licensed under the ShapleyMcg License v1.0, an
-    attribution-required license that grants no rights to the person known as "0xSero." Use of ShapleyMcg without
-    this attribution is unlicensed.
-
-  The base model, zai-org/GLM-5.3-Flash, is under the license on its model card.
-  The DFlash2 drafter, incoai/GLM-5.3-Flash-DFlash2, is licensed CC BY-NC-ND 4.0: non-commercial use only, no
-  derivatives (commercial licensing: contact@inco.ai, per its model card). DRAFTER=mtp serves without it.
-
-Third-party software in the image
-  The prebuilt image (and the one scripts/prepare.sh builds) is based on NVIDIA's PyTorch container
-  nvcr.io/nvidia/pytorch:26.07-py3, redistributed as a value-added runtime image. The NVIDIA software in it is
-  governed by the NVIDIA Software License Agreement
-  (https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-software-license-agreement/) and the
-  Product-Specific Terms for NVIDIA AI Products
-  (https://www.nvidia.com/en-us/agreements/enterprise-software/product-specific-terms-for-ai-products/), which the
-  container prints at every start; by pulling or running the image you accept them. The image also contains PyAV
-  (BSD) with its FFmpeg libraries (LGPL) and xgrammar (Apache 2.0). This project's Apache License covers its own
-  work only (as described above), not the software in the image.
-
-See CREDITS.md for everyone this project builds on.

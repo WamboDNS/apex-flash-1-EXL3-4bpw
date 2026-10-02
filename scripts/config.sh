@@ -31,12 +31,12 @@ WORKER="${WORKER:-}"                 # e.g. user@<worker address>; set it in scr
 FABRIC_PEER="${FABRIC_PEER:-}"       # the worker's CX7 address when WORKER is reached over another network
 MASTER_PORT="${MASTER_PORT:-29551}"  # TensorFold's rendezvous port between the ranks (keep it on the private link)
 
-MODEL_ID="${MODEL_ID:-Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw}"   # EXL3 routed experts (4 bpw), BF16 elsewhere
+MODEL_ID="${MODEL_ID:-wambosec/apex-flash-1-EXL3-4bpw}"   # EXL3 routed experts (4 bpw), BF16 elsewhere
 # The checkpoint's revision (a Hugging Face commit sha; DFLASH2_REVISION below is DFlash2's): the one this recipe was
 # measured with. prepare.sh downloads exactly it, start.sh serves that snapshot from the local cache (no network), and
 # a new upstream commit changes nothing here until the pin does. Empty: the Hub's main when first downloaded. The pin
 # belongs to the default MODEL_ID; another MODEL_ID gets no pin unless you set one.
-_rev=""; [[ "$MODEL_ID" == Mia-AiLab/GLM-5.3-Flash-EXL3-TR3-4bpw ]] && _rev=9eaebb7c4e96d983dcd538e18624622ba5b820a8
+_rev=""; [[ "$MODEL_ID" == wambosec/apex-flash-1-EXL3-4bpw ]] && _rev=
 MODEL_REVISION="${MODEL_REVISION-$_rev}"
 TF_VERSION="${TF_VERSION:-v0.6.0}"
 TF_REPO="${TF_REPO:-https://github.com/ashhart/TensorFold.git}"
@@ -57,9 +57,9 @@ prebuilt_image() {
   local tag="${TF_VERSION}-$(image_hash)"
   if [[ "$tag" == "$IMAGE_TAG" && -n "$IMAGE_DIGEST" ]]; then echo "$GHCR_IMAGE@$IMAGE_DIGEST"; else echo "$GHCR_IMAGE:$tag"; fi
 }
-CONTAINER_NAME="${CONTAINER_NAME:-glm53-flash-tf}"           # the same name on both Sparks
+CONTAINER_NAME="${CONTAINER_NAME:-apex-flash-tf}"            # the same name on both Sparks
 
-SERVED_NAME="${SERVED_NAME:-GLM-5.3-Flash-EXL3}"
+SERVED_NAME="${SERVED_NAME:-apex-flash-1}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8888}"
 DRAFTER="${DRAFTER:-dflash2}"        # dflash2: incoai/GLM-5.3-Flash-DFlash2 drafts (CC BY-NC-ND 4.0: non-commercial
@@ -70,7 +70,10 @@ export TF_GLM_MTP="${TF_GLM_MTP:-auto}"
 # Image and video input (rank 0 runs GLM's vision tower: 1.05 GiB of bf16 weights and 0.75 GiB of workspace). A picture
 # takes at most TENSORFOLD_GLM_IMAGE_TOKENS tokens (2048), a clip TENSORFOLD_GLM_VIDEO_TOKENS (16384) over at most
 # TENSORFOLD_GLM_VIDEO_FRAMES frames (128, 2 a second). VISION_URLS=1 also accepts public https URLs (default: data URLs).
-VISION="${VISION:-1}"
+# apex-flash-1 inherits GLM-5.3-Flash's vision tower, but its model card reports no image or video evaluation,
+# so this recipe leaves it out: rank 0 saves 1.05 GiB of weights and 0.75 GiB of workspace, and the window stops
+# paying the tower's ~66k tokens. Set VISION=1 to load it anyway; the tower's weights are in the checkpoint.
+VISION="${VISION:-0}"
 VISION_URLS="${VISION_URLS:-0}"
 # Concurrent requests (patches 0026-0030, 0035, 0040, 0041: one shared pool of per-token caches, one batched verify window
 # a round): 1 to 4, with DRAFTER=dflash2 only (mtp: 1). 4 (default), prose in all (sparkDash): 60.4 / 79.2 / 89.5 /
@@ -88,7 +91,10 @@ export TF_GLM_KV="$KV"
 # weights give back), 524,288 with mtp. start.sh falls back to the largest that fits when a start's memory budget is
 # smaller. 0: the largest the memory affords (then no memory is left to keep other conversations' prompts).
 DENSE="${DENSE:-q4}"
-if [[ "$KV" != bf16 ]]; then _ctx=1048576; elif [[ "$DRAFTER" != dflash2 ]]; then _ctx=524288
+# This recipe defaults to 262,144 rather than the checkpoint's full 1,048,576: a quarter of the window covers
+# agent and code work, and the memory it gives back is what leaves a Spark usable for other GPU jobs. Set
+# CONTEXT=1048576 (or use profiles/max-context.sh) for the full window.
+if [[ "$KV" != bf16 ]]; then _ctx=262144; elif [[ "$DRAFTER" != dflash2 ]]; then _ctx=524288
 elif [[ "$VISION" == 1 && "$DENSE" != q4 ]]; then _ctx=163840; else _ctx=196608; fi
 CONTEXT="${CONTEXT:-$_ctx}"
 DFLASH2_ID="${DFLASH2_ID:-incoai/GLM-5.3-Flash-DFlash2}"
@@ -182,7 +188,9 @@ export TF_GLM_SHARED_PREFIX="$SHARED_PREFIX"
 # about 4.5 GiB there, and the pool comes out at ~2.1-2.9M tokens depending on what is free at start. TensorFold's own
 # defaults (a tenth of RAM, ~12.2; 3 GiB: pool 1,411,072 tokens) leave more. Raise the reserve if other work shares
 # the Sparks' memory.
-MEMORY_RESERVE_GIB="${MEMORY_RESERVE_GIB:-14.5}"
+# Raised from upstream's 14.5 to 24: with a 262,144-token window the pool does not need the extra memory, and
+# this keeps roughly 24 GiB free on each Spark for whatever else is running there.
+MEMORY_RESERVE_GIB="${MEMORY_RESERVE_GIB:-24}"
 export TENSORFOLD_MEMORY_RESERVE_GIB="$MEMORY_RESERVE_GIB"
 KV_POOL_GIB="${KV_POOL_GIB:-12.5}"
 export TF_GLM_CACHE_GIB="$KV_POOL_GIB"
@@ -199,7 +207,7 @@ NFS_PATH="${NFS_PATH:-$HF_CACHE}"
 NFS_SERVER="${NFS_SERVER:-}"
 NFS_VOLUME="${NFS_VOLUME:-glm53-hf}"
 KERNEL_CACHE="${KERNEL_CACHE:-$HOME/.cache/tensorfold-glm53}"   # compiled CUDA kernels, a folder per image's patches hash
-STATE_DIR="${STATE_DIR:-$HOME/.local/state/glm53-tensorfold}"   # this recipe's locks and setup marker
+STATE_DIR="${STATE_DIR:-$HOME/.local/state/apex-flash-tensorfold}"   # this recipe's locks and setup marker
 # Free disk prepare.sh asks for before it downloads or copies: the checkpoint (~176 GB) under HF_CACHE (on the worker,
 # the copy is checked against its size instead), and an image build or copy (~25 GB) under Docker's root on each Spark;
 # both together when they share a filesystem.

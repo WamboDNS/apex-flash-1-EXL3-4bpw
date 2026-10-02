@@ -187,9 +187,18 @@ for id in "${models[@]}"; do
     log "Worker has $id @ ${rev:0:8}"
     continue
   fi
-  need=$(( $(du -sLB1G "$dir/snapshots/$rev" | cut -f1) + 5 ))
+  # The copy below is incremental (rsync -a --partial), so what the worker already holds
+  # of this snapshot counts toward the budget rather than against it. Without this, an
+  # in-place checkpoint change or a resumed copy is refused on a worker that has almost
+  # all of it already -- it asks for room for a second full copy. The head's own check
+  # above does the same thing by setting need_ckpt=0 when the snapshot is present.
+  full=$(du -sLB1G "$dir/snapshots/$rev" | cut -f1)
+  whave=$(worker "du -sLB1G '$wdir/snapshots/$rev' 2>/dev/null | cut -f1" 2>/dev/null || true)
+  whave=${whave:-0}
+  need=$(( full + 5 - whave ))
+  (( need < 5 )) && need=5
   wfree=$(worker_free_gb "$WORKER_HF")
-  (( wfree >= need )) || die "only ${wfree} GB free under $WORKER_HF on the worker, $id needs ~${need} GB"
+  (( wfree >= need )) || die "only ${wfree} GB free under $WORKER_HF on the worker, $id needs ~${need} GB more (it has ~${whave} GB of ~${full} GB)"
   log "Copying $id @ ${rev:0:8} to the worker over the Sparks' link (~${need} GB, resumes)"
   worker "mkdir -p '$wdir/refs' '$wdir/snapshots'"
   # the blobs this revision uses, then its snapshot links and refs/main (the cache layout huggingface_hub keeps)
