@@ -59,22 +59,16 @@ Sparks over a ConnectX-7 link, which is what these numbers come from:
 
 ## Quality
 
-**Not evaluated.** No benchmark was run on this checkpoint, and no comparison against the
-BF16 original exists — the original does not fit on the hardware this was built for, so
-there is nothing to compare against locally.
+Not benchmarked — the BF16 original does not fit on the hardware this was built for, so
+there was nothing to compare against locally. Whether it holds the security-task advantage
+Cantina report for the original (66.7% vs 60% for base GLM-5.3-Flash) is an open question;
+if you have a suitable benchmark, the result is worth publishing either way.
 
-One thing is worth knowing before using it for the work the base model was trained for.
-apex-flash-1 is a GRPO post-train of GLM-5.3-Flash using rank-256 LoRA over all experts
-and routers plus full-parameter updates to 16 experts. Measured on one layer, that
-training moved the routed experts about **6.7e-5** in relative Frobenius terms, while
-4-bit quantization moves them about **7.4%** — four orders of magnitude more. Quantization
-error is concentrated where the activations are weakest (LDLQ minimises the
-Hessian-weighted error, and a gradient-trained delta lives in the directions it protects),
-so that ratio overstates how much of the fine-tune is lost — by an unknown amount.
-
-Whether the quantized model retains the security-task advantage Cantina report for the
-original (66.7% vs 60% for base GLM-5.3-Flash) has not been tested. If you have a suitable
-benchmark, that result is worth publishing either way.
+Worth a glance if you are choosing a bitrate: the post-train is small in weight-space next
+to what 4-bit quantization does, though EXL3 places its error where the activations are
+weakest, which is not where a trained delta lives. The
+[recipe](https://github.com/WamboDNS/apex-flash-1-EXL3-4bpw/blob/main/quantize/README.md#choosing-the-bitrate)
+has the numbers.
 
 ## License
 

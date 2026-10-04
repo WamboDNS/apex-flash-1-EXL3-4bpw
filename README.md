@@ -74,9 +74,9 @@ prefix, since repeating a prompt measures the prompt cache instead)
 
 **Memory**: ~87.6 GiB on each Spark at startup, leaving 18 to 19 GiB free per Spark.
 
-**Quality**: not measured. See
-[Choosing the bitrate](quantize/README.md#choosing-the-bitrate) for what is known about
-what 4-bit quantization does to this fine-tune, and what is not.
+**Quality**: not benchmarked. See
+[Choosing the bitrate](quantize/README.md#choosing-the-bitrate) if you are weighing 4 bits
+against more.
 
 For reference, the upstream recipe reports 60.4 tok/s prose at one stream and 108.8 at
 four for 4 bpw base GLM-5.3-Flash on the same engine and hardware. That is a different
